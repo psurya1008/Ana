@@ -20,7 +20,7 @@ from .detect import WindowInfo
 from .ledger import Ledger
 from .models import Contract, Intervention, SessionStatus, Stake, StakeKind
 from .runtime import Supervisor
-from .storage import Store
+from .storage import Store, day_key
 
 MINUTE = 60.0
 
@@ -212,11 +212,13 @@ def run_demo(args: Any) -> int:
     sup = Supervisor(ui, cfg, store, ledger, probe,
                      clock=clock, sleep=clock.sleep)
     total = sum(step[0] for step in timeline)
+    # A session belongs to the day it started, and the virtual clock can run
+    # past midnight, so pin the report to the start day rather than the end.
+    start_day = day_key(clock())
     sup.run_session(contract, max_seconds=total)
 
     print("\n" + "─" * 64)
-    print(report.daily_report(store, cfg, ledger,
-                              day=time.strftime("%Y-%m-%d", time.localtime(clock()))))
+    print(report.daily_report(store, cfg, ledger, day=start_day))
     print("─" * 64)
     print(f"\n  {ledger.verify().describe()}")
     print(f"  standing: {standing(store, cfg, ledger, clock()).headline()}")

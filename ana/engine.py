@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from typing import Any, Optional
 
 from . import avoidance, penalties, scoring
-from .classify import Classifier
+from .classify import Classifier, Verdict
 from .models import (
     Action,
     ActionKind,
@@ -69,6 +69,7 @@ class FocusEngine:
         self.probe_slots: list[ProbeSlot] = []
         self.awaiting_probe: Optional[float] = None
         self.gap_seconds: float = 0.0
+        self.excused_seconds: float = 0.0
         self.closed = False
         self.status: SessionStatus = SessionStatus.ACTIVE
         self.signals: list[Signal] = []          # everything caught, for the report
@@ -103,7 +104,16 @@ class FocusEngine:
         from .config import threshold
         return threshold(self.cfg, key)
 
-    # -- the main loop -----------------------------------------------------
+    def excuse(self, seconds: float) -> None:
+        """Discount time the user spent inside Ana's own dialogs.
+
+        The supervisor loop blocks while an overlay or probe is up, so without
+        this the next tick sees a multi-second jump and books it as a sleeping
+        machine — which zeroes the time and, past 60s, fabricates a desertion
+        signal against someone who was sitting there answering Ana's question.
+        """
+        if seconds > 0:
+            self.excused_seconds += seconds
     def tick(self, sample: Sample) -> list[Action]:
         if self.closed:
             return []
@@ -112,6 +122,15 @@ class FocusEngine:
 
         actions: list[Action] = []
         dt = sample.ts - (self.last_ts or sample.ts)
+
+        # Time inside Ana's own prompts is neither focus nor distraction: it is
+        # the cost of being interrupted. Take it off the clock before the gap
+        # check, so it can never be mistaken for a sleeping or killed machine.
+        if self.excused_seconds > 0:
+            excused = min(dt, self.excused_seconds)
+            dt -= excused
+            self.excused_seconds = 0.0
+            self.totals.interrupted_seconds += excused
 
         # A gap much larger than the sampling interval means the machine slept,
         # or the tracker was killed. Neither earns credit.
@@ -162,20 +181,22 @@ class FocusEngine:
             found.extend(detector.observe(tick_ctx))
         self.signals.extend(found)
 
-        # -- probes ---------------------------------------------------------
-        actions.extend(self._maybe_probe(sample))
-
         # -- judgement -------------------------------------------------------
         self.last_ts = sample.ts
         if self.pending is not None:
             return actions  # one overlay at a time; the rest waits
 
         signal = penalties.worst(found)
-        if signal is None:
-            return actions
+        intervention = (self.escalator.judge(signal, sample.ts)
+                        if signal is not None else None)
 
-        intervention = self.escalator.judge(signal, sample.ts)
-        if intervention is None:
+        # A probe only fires when nothing more serious is happening. Asking
+        # "what are you doing right now?" while you are on YouTube, instead of
+        # stopping you, is the one outcome that makes Ana look broken.
+        if intervention is None or intervention.level == 0:
+            actions.extend(self._maybe_probe(sample, verdict))
+
+        if signal is None or intervention is None:
             return actions
 
         if intervention.level == 0:
@@ -212,8 +233,14 @@ class FocusEngine:
         else:
             self.totals.neutral_seconds += dt
 
-    def _maybe_probe(self, sample: Sample) -> list[Action]:
+    def _maybe_probe(self, sample: Sample, verdict: Verdict) -> list[Action]:
         if self.awaiting_probe is not None or self.pending is not None:
+            return []
+        # Never probe someone who is visibly on a distraction. There is nothing
+        # to check — you can see what they are doing — and asking "what are you
+        # doing right now?" instead of stopping them reads as a broken app. The
+        # slot is held, not spent, so the probe lands once they are back on task.
+        if verdict.category is Category.BLOCK:
             return []
         for slot in self.probe_slots:
             if not slot.fired and sample.ts >= slot.at:

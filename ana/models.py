@@ -199,6 +199,7 @@ class SessionTotals:
     grey_seconds: float = 0.0
     block_seconds: float = 0.0
     idle_seconds: float = 0.0
+    interrupted_seconds: float = 0.0   # time spent answering Ana's own prompts
     switches: int = 0
     interventions: int = 0
     probes_passed: int = 0
@@ -212,6 +213,7 @@ class SessionTotals:
             + self.grey_seconds
             + self.block_seconds
             + self.idle_seconds
+            + self.interrupted_seconds
         )
 
     @property

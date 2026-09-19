@@ -212,3 +212,72 @@ class TestLockoutBehaviour(unittest.TestCase):
                 self.assertLess(iv.debt_seconds, first.debt_seconds)
                 return
         self.fail("never saw two L4s")
+
+
+class TestAnasOwnDialogsAreNotHeldAgainstYou(unittest.TestCase):
+    """Regression: the supervisor loop blocks while an overlay or probe is up.
+
+    Without excusing that time the next tick sees a multi-second jump, books it
+    as a sleeping machine, and past 60s invents a desertion signal against
+    someone who was sitting there answering Ana's own question.
+    """
+
+    def test_excused_time_is_not_a_desertion(self):
+        from ana.models import Sample
+        e = make_engine()
+        run(e, [(60, "code", "billing parser — VS Code")])
+        e.excuse(75)                                  # a 75-second L3 overlay
+        e.tick(Sample(e.last_ts + 77, "code", "billing parser — VS Code"))
+        self.assertEqual([s for s in e.signals if s.kind == "desertion"], [])
+        self.assertAlmostEqual(e.totals.interrupted_seconds, 75, delta=1)
+
+    def test_an_unexcused_jump_is_still_a_desertion(self):
+        from ana.models import Sample
+        e = make_engine()
+        run(e, [(60, "code", "billing parser — VS Code")])
+        e.tick(Sample(e.last_ts + 600, "code", "billing parser — VS Code"))
+        self.assertTrue([s for s in e.signals if s.kind == "desertion"],
+                        "a real gap must still be caught")
+
+    def test_excused_time_earns_no_focus_credit(self):
+        from ana.models import Sample
+        e = make_engine()
+        run(e, [(60, "code", "billing parser — VS Code")])
+        before = e.totals.focus_seconds
+        e.excuse(75)
+        e.tick(Sample(e.last_ts + 77, "code", "billing parser — VS Code"))
+        self.assertAlmostEqual(e.totals.focus_seconds, before, delta=3)
+
+
+class TestProbeNeverPreemptsAnOverlay(unittest.TestCase):
+    """Regression: asking 'what are you doing?' while you sit on YouTube —
+    instead of stopping you — is the one outcome that makes Ana look broken."""
+
+    def test_no_probe_at_all_while_sitting_on_a_blocked_window(self):
+        e = make_engine(make_contract(minutes=30))
+        run(e, [(60 * 4, "code", "billing parser — VS Code")])
+        from ana.engine import ProbeSlot
+        e.probe_slots = [ProbeSlot(at=e.last_ts)]      # a probe is due right now
+        acts = run(e, [(40, "chrome", "YouTube — lofi beats")])
+        self.assertIn("intervene", kinds(acts), "it must stop you")
+        self.assertNotIn("probe", kinds(acts), "and not merely ask what you are up to")
+
+    def test_the_held_probe_lands_once_you_are_back_on_task(self):
+        e = make_engine(make_contract(minutes=30))
+        run(e, [(60 * 4, "code", "billing parser — VS Code")])
+        from ana.engine import ProbeSlot
+        e.probe_slots = [ProbeSlot(at=e.last_ts)]
+        acts = run(e, [(40, "chrome", "YouTube — lofi beats")])
+        self.assertNotIn("probe", kinds(acts))
+        for iv in interventions(acts):
+            e.resolve_intervention(e.contract.intent, waited_seconds=iv.wait_seconds)
+        acts = run(e, [(30, "code", "billing parser — VS Code")])
+        self.assertIn("probe", kinds(acts), "the slot is held, not spent")
+
+    def test_the_probe_still_fires_once_you_are_back_on_task(self):
+        e = make_engine(make_contract(minutes=30))
+        run(e, [(60 * 2, "code", "billing parser — VS Code")])
+        from ana.engine import ProbeSlot
+        e.probe_slots = [ProbeSlot(at=e.last_ts)]
+        acts = run(e, [(30, "code", "billing parser — VS Code")])
+        self.assertIn("probe", kinds(acts))

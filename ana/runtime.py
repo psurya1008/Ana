@@ -187,7 +187,11 @@ class Supervisor:
                 now = self.clock()
                 sample = self._take_sample(now)
                 actions = self.engine.tick(sample)
+                # _execute blocks for as long as an overlay or probe is up.
+                # Hand that back to the engine so it is not read as a gap.
+                before_ui = self.clock()
                 broke_glass = self._execute(actions, sample) or broke_glass
+                self.engine.excuse(self.clock() - before_ui)
                 write_heartbeat(self.session_id)
                 self.ui.hud(self.engine.snapshot())
                 if self.engine.elapsed >= limit:

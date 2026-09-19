@@ -57,6 +57,7 @@ class DaySummary:
     block_minutes: float = 0.0
     grey_minutes: float = 0.0
     idle_minutes: float = 0.0
+    interrupted_minutes: float = 0.0
     interventions: int = 0
     broken: int = 0
     unverified: int = 0
@@ -86,6 +87,7 @@ def summarise_day(day: str, rows: Sequence[Any], target_minutes: float,
         s.block_minutes += totals.block_seconds / MINUTE
         s.grey_minutes += totals.grey_seconds / MINUTE
         s.idle_minutes += totals.idle_seconds / MINUTE
+        s.interrupted_minutes += totals.interrupted_seconds / MINUTE
         status = _status_of(row)
         if status is SessionStatus.COMPLETE:
             s.completed += 1
@@ -101,7 +103,8 @@ def summarise_day(day: str, rows: Sequence[Any], target_minutes: float,
         if score is not None:
             scores.append(float(score))
     s.score = round(sum(scores) / len(scores), 1) if scores else 0.0
-    for key in ("focus_minutes", "block_minutes", "grey_minutes", "idle_minutes"):
+    for key in ("focus_minutes", "block_minutes", "grey_minutes", "idle_minutes",
+                "interrupted_minutes"):
         setattr(s, key, round(getattr(s, key), 1))
     return s
 

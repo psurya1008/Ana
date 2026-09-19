@@ -150,7 +150,7 @@ ana/
   ui/             console UI, and the tk HUD / overlay / dashboard
   report.py       the mirror
   demo.py         a full session on a virtual clock
-tests/            93 tests over the pure layer and end to end
+tests/            99 tests over the pure layer and end to end
 ```
 
 `engine.py` is pure — samples in, actions out — which is why the entire rulebook

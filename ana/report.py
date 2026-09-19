@@ -98,6 +98,8 @@ def daily_report(store: Store, cfg: dict[str, Any], ledger: Optional[Ledger] = N
     out.append(f"| grey (allowed but budgeted) | {summary.grey_minutes:.0f} |")
     out.append(f"| blocked (distraction) | {summary.block_minutes:.0f} |")
     out.append(f"| idle (away / not touching it) | {summary.idle_minutes:.0f} |")
+    if summary.interrupted_minutes >= 1:
+        out.append(f"| interrupted (answering Ana) | {summary.interrupted_minutes:.0f} |")
     out.append("")
     out.append(f"Sessions: {summary.sessions} · completed {summary.completed} · "
                f"mean score {summary.score} · streak **{st.streak}** · "
