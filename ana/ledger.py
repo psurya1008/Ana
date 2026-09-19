@@ -17,6 +17,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -66,6 +67,11 @@ class Ledger:
     def __init__(self, path: Path):
         self.path = Path(path)
         self.path.parent.mkdir(parents=True, exist_ok=True)
+        # append() reads the chain head and then writes; two threads doing that
+        # at once would fork the chain and break verification. The tk UI runs
+        # the session on a worker while the dashboard reads on the main thread,
+        # so this is a real race, not a theoretical one.
+        self._lock = threading.RLock()
 
     # -- reading ----------------------------------------------------------
     def __iter__(self) -> Iterator[Entry]:
@@ -108,6 +114,10 @@ class Ledger:
 
     # -- writing ----------------------------------------------------------
     def append(self, kind: str, payload: dict[str, Any] | None = None) -> Entry:
+        with self._lock:
+            return self._append_locked(kind, payload)
+
+    def _append_locked(self, kind: str, payload: dict[str, Any] | None = None) -> Entry:
         payload = dict(payload or {})
         seq, prev = self.head()
         record = {

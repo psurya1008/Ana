@@ -67,11 +67,9 @@ class TkUI:
             except BaseException as exc:  # noqa: BLE001 - surfaced after mainloop
                 result["error"] = exc
             finally:
+                # Just raise the flag. The pump (on the tk thread) notices it
+                # and quits — calling into Tcl from this thread is not safe.
                 self._stopped.set()
-                try:
-                    self.root.after(0, self.root.quit)  # type: ignore[union-attr]
-                except Exception:  # noqa: BLE001
-                    pass
 
         threading.Thread(target=worker, daemon=True, name="ana-supervisor").start()
         self._pump()
@@ -95,6 +93,9 @@ class TkUI:
                     request.finish(None)
         except queue.Empty:
             pass
+        if self._stopped.is_set():
+            self.root.quit()
+            return
         self.root.after(40, self._pump)
 
     def _call(self, fn: Callable[[_Request], None], block: bool = True) -> Any:
