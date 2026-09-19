@@ -1,0 +1,22 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ana-focus"
+version = "0.1.0"
+description = "Focus enforcement and accountability for PC. Local, quittable, on the record."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = []          # stdlib only; the GUI needs tkinter, which ships with Python
+
+[project.optional-dependencies]
+# Only needed to notice distractions running in the background (Spotify, games).
+processes = ["psutil>=5.9"]
+
+[project.scripts]
+ana = "ana.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["ana*"]
